@@ -1,109 +1,77 @@
-#!/usr/bin/env bash
+#!/bin/bash
 
-# INTERVAL is equal to 1s because we want to express the bandwidth in sec
-readonly INTERVAL=1
+INTERVAL="1" # update interval in seconds
 
-# UPLOAD and DOWNLOAD index
-readonly UPLOAD=0
-readonly DOWNLOAD=1
+# Network interface to monitor
+current_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$current_dir"/utils.sh
 
-# SIZE index are the multiple of the unit byte and value the internationally recommended unit symbol in sec
-readonly SIZE=(
-  [1]='B/s'
-  [1024]='kB/s'
-  [1048576]='MB/s'
-  [1073741824]='GB/s'
-)
+# Network interface to monitor
+network_name="en0"
 
-# interface_get try to automaticaly get the used interface if network_name is empty
-interface_get() {
-  name="$(tmux show-option -gqv "@dracula-network-bandwidth")"
+if [[ $(uname -s) == "Darwin" ]]; then
+    network_name=$(get_tmux_option "@dracula-network-name" "en0")
+elif [[ $(uname -s) == "Linux" ]]; then
+    network_name=$(get_tmux_option "@dracula-network-name" "eth0")
+else
+    # TODO: update this for windows
+    echo "Unknown operating system"
+    exit 1
+fi
 
-  if [[ -z $name ]]; then
-    case "$(uname -s)" in
-    Linux)
-      if type ip >/dev/null; then
-        name="$(ip -o route get 192.168.0.0 | awk '{print $5}')"
-      fi
-      ;;
-    esac
-  fi
-
-  echo "$name"
-}
-
-# interface_bytes give interface name and signal tx/rx return Bytes
-interface_bytes() {
-  cat "/sys/class/net/$1/statistics/$2_bytes"
-}
-
-# get_bandwidth return the number of bytes exchanged for tx and rx
-get_bandwidth() {
-  upload="$(interface_bytes "$1" "tx")"
-  download="$(interface_bytes "$1" "rx")"
-
-  #wait the interval for Wait for interval to calculate the difference
-  sleep "$INTERVAL"
-
-  upload="$(bc <<<"$(interface_bytes "$1" "tx") - $upload")"
-  download="$(bc <<<"$(interface_bytes "$1" "rx") - $download")"
-
-  #set to 0 by default useful for non-existent interface
-  echo "${upload:-0} ${download:-0}"
-}
-
-# bandwidth_to_unit convert bytes into its highest unit and add unit symbol in sec
-bandwidth_to_unit() {
-  local size=1
-  for i in "${!SIZE[@]}"; do
-    if (($1 < i)); then
-      break
-    fi
-
-    size="$i"
-  done
-
-  local result="0.00"
-  if (($1 != 0)); then
-    result="$(bc <<<"scale=2; $1 / $size")"
-  fi
-
-  echo "$result ${SIZE[$size]}"
-}
+network_name=$(get_tmux_option "@dracula-network-name" "en0")
 
 main() {
-  counter=0
-  bandwidth=()
+    while true; do
+        output_download=""
+        output_upload=""
+        output_download_unit=""
+        output_upload_unit=""
 
-  network_name=""
-  show_interface="$(tmux show-option -gqv "@dracula-network-bandwidth-show-interface")"
-  interval_update="$(tmux show-option -gqv "@dracula-network-bandwidth-interval")"
+        if [[ $(uname -s) == "Linux" ]]; then
+            initial_download=$(cat /sys/class/net/"$network_name"/statistics/rx_bytes)
+            initial_upload=$(cat /sys/class/net/"$network_name"/statistics/tx_bytes)
 
-  if [[ -z $interval_update ]]; then
-    interval_update=0
-  fi
+            sleep "$INTERVAL"
 
-  if ! command -v bc &> /dev/null
-  then
-    echo "command bc could not be found!"
-    exit 1
-  fi
+            final_download=$(cat /sys/class/net/"$network_name"/statistics/rx_bytes)
+            final_upload=$(cat /sys/class/net/"$network_name"/statistics/tx_bytes)
+        else
+            initial_download=$(netstat -I "$network_name" -b | tail -n 1 | awk '{print $7}')
+            initial_upload=$(netstat -I "$network_name" -b | tail -n 1 | awk '{print $10}')
 
-  while true; do
-    if ((counter == 0)); then
-      counter=60
-      network_name="$(interface_get)"
-    fi
+            sleep $INTERVAL
 
-    IFS=" " read -ra bandwidth <<<"$(get_bandwidth "$network_name")"
+            final_download=$(netstat -I "$network_name" -b | tail -n 1 | awk '{print $7}')
+            final_upload=$(netstat -I "$network_name" -b | tail -n 1 | awk '{print $10}')
+        fi
 
-    if [[ $show_interface == "true" ]]; then echo -n "[$network_name] "; fi
-    echo "↓ $(bandwidth_to_unit "${bandwidth[$DOWNLOAD]}") • ↑ $(bandwidth_to_unit "${bandwidth[$UPLOAD]}")"
+        total_download_bps=$(expr "$final_download" - "$initial_download")
+        total_upload_bps=$(expr "$final_upload" - "$initial_upload")
 
-    ((counter = counter - 1))
-    sleep "$interval_update"
-  done
+        if [ "$total_download_bps" -gt 1073741824 ]; then
+            output_download=$(echo "$total_download_bps 1024" | awk '{printf "%.1f \n", $1/($2 * $2 * $2)}')
+            output_download_unit="G"
+        elif [ "$total_download_bps" -gt 1048576 ]; then
+            output_download=$(echo "$total_download_bps 1024" | awk '{printf "%.1f \n", $1/($2 * $2)}')
+            output_download_unit="M"
+        else
+            output_download=$(echo "$total_download_bps 1024" | awk '{printf "%.1f \n", $1/$2}')
+            output_download_unit="K"
+        fi
+
+        if [ "$total_upload_bps" -gt 1073741824 ]; then
+            output_upload=$(echo "$total_download_bps 1024" | awk '{printf "%.1f \n", $1/($2 * $2 * $2)}')
+            output_upload_unit="G"
+        elif [ "$total_upload_bps" -gt 1048576 ]; then
+            output_upload=$(echo "$total_upload_bps 1024" | awk '{printf "%.1f \n", $1/($2 * $2)}')
+            output_upload_unit="M"
+        else
+            output_upload=$(echo "$total_upload_bps 1024" | awk '{printf "%.1f \n", $1/$2}')
+            output_upload_unit="K"
+        fi
+
+        echo " $output_upload$output_upload_unit  $output_download$output_download_unit"
+    done
 }
-
-#run main driver
 main
