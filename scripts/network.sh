@@ -19,7 +19,10 @@ get_ssid()
 
     Darwin)
       if /System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I | grep -E ' SSID' | cut -d ':' -f 2 | sed 's/^[[:blank:]]*//g' &> /dev/null; then
-        echo "$(/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I | grep -E ' SSID' | cut -d ':' -f 2)" | sed 's/^[[:blank:]]*//g'
+        SSID="$(/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I | grep -E ' SSID' | cut -d ':' -f 2 | sed 's/^[[:blank:]]*//g')"
+        RSSI="$(/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I | grep -E ' agrCtlRSSI' | cut -d ':' -f 2 | sed 's/^[[:blank:]]*//g')"
+        RATE="$(/System/Library/PrivateFrameworks/Apple80211.framework/Resources/airport -I | grep -E ' lastTxRate' | cut -d ':' -f 2 | sed 's/^[[:blank:]]*//g')"
+        printf '%s (%s, %smbps)' "$SSID" "$RSSI" "$RATE"
       else
         echo 'Ethernet'
       fi

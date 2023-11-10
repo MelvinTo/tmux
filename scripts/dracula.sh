@@ -58,7 +58,7 @@ main()
       left_icon="#H";;
     firewalla)
       left_icon="$(redis-cli get groupName)"
-      (($left_icon)) || left_icon="#H";;
+      test -z "$left_icon" && left_icon="#H";;
     *)
       left_icon=$show_left_icon;;
   esac
@@ -197,6 +197,7 @@ main()
 
     elif [ $plugin = "network" ]; then
       IFS=' ' read -r -a colors <<< $(get_tmux_option "@dracula-network-colors" "cyan dark_gray")
+      tmux set-option -g status-right-length 250
       script="#($current_dir/network.sh)"
 
     elif [ $plugin = "network-bandwidth" ]; then
