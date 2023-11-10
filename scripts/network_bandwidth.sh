@@ -19,8 +19,6 @@ else
     exit 1
 fi
 
-network_name=$(get_tmux_option "@dracula-network-name" "en0")
-
 main() {
     while true; do
         output_download=""
