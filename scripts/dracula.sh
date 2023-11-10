@@ -56,6 +56,9 @@ main()
       left_icon="#W";;
     hostname)
       left_icon="#H";;
+    firewalla)
+      left_icon="$(redis-cli get groupName)"
+      (($left_icon)) || left_icon="#H";;
     *)
       left_icon=$show_left_icon;;
   esac
